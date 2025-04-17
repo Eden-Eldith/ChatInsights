@@ -25,12 +25,12 @@ ChatInsights is a Python application designed to process your ChatGPT JSON expor
 *   Tkinter (usually included with standard Python installations)
 
 ## How to Use
+(I usually just double click it)
 
 1.  **Run the script:**
     ```bash
     python chat-insights-app.py
     ```
-(I usually just double click it)
 2.  **Select Export File:** In the "Import & Process" tab, click "Browse" to select your `conversations.json` file downloaded from ChatGPT.
 3.  **Configure (Optional):**
     *   Adjust the "Output Directory" if you don't want to use the default (`~/ChatInsights`).
