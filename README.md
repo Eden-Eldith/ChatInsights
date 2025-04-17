@@ -117,4 +117,4 @@ Assuming the default output directory (`~/ChatInsights`):
 └── training_data.csv       # Optional CSV training data output
 ```
 
-
+To take this futher, Use the obsidian plugin [Ai Tagger Universe](https://github.com/niehu2018/obsidian-ai-tagger-universe) and I reccomend [Gemma3 on Ollama 1b version](https://ollama.com/library/gemma3) as the model for super fast tagging 
