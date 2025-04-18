@@ -117,4 +117,7 @@ Assuming the default output directory (`~/ChatInsights`):
 └── training_data.csv       # Optional CSV training data output
 ```
 
-To take this futher, Use the obsidian plugin [Ai Tagger Universe](https://github.com/niehu2018/obsidian-ai-tagger-universe) and I reccomend [Gemma3 on Ollama 1b version](https://ollama.com/library/gemma3) as the model for super fast tagging 
+---
+
+- If you have alot of Notes, Then you may want to follow this [fix for the obsidian graph](https://www.reddit.com/r/ObsidianMD/comments/16hvjiy/fix_for_a_slow_obsidian_graph_view/)
+- To take this futher, Use the obsidian plugin [Ai Tagger Universe](https://github.com/niehu2018/obsidian-ai-tagger-universe) and I reccomend [Gemma3 on Ollama 1b version](https://ollama.com/library/gemma3) as the model for super fast tagging 
