@@ -1,5 +1,5 @@
 # ChatInsights
-The Personal Knowledge Graph You Didn’t Know You Already Wrote
+## The Personal Knowledge Graph You Didn’t Know You Already Wrote
 ![My Personal Vault](https://i.imgur.com/6J00Gu1.png)
 ChatInsights is a Python application designed to process your ChatGPT JSON export, analyze conversation concepts, and generate a structured Obsidian vault for knowledge management. It also extracts training data pairs for potential LLM fine-tuning.
 > ⚡️ Inspired by this Reddit post: [Mining Your AI Conversation History — r/ChatGPTPro](https://www.reddit.com/r/ChatGPTPro/comments/1jzzgie/mining_your_ai_conversation_history_the_complete/)
