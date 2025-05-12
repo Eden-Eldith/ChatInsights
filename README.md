@@ -28,7 +28,10 @@ ChatInsights is a Python application designed to process your ChatGPT JSON expor
 ## How to Use
 
 # Video Version 
-[![Tutorial](https://img.youtube.com/vi/P8TMdz2KOGI/0.jpg)](https://www.youtube.com/watch?v=P8TMdz2KOGI)
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=P8TMdz2KOGI" target="_blank">
+  <img src="http://img.youtube.com/vi/P8TMdz2KOGI/0.jpg" alt="tutorial" width="240" height="180" border="10" />
+</a>
+
 
 # Text Version:
 (I usually just double click it)
