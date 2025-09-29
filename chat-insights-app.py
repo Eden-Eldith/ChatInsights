@@ -521,7 +521,11 @@ Created by Eden with assistance from Atlas
                     if '|' in cleaned_pattern:
                         parts = [part.strip() for part in cleaned_pattern.split('|') if part.strip()]
                         cleaned_pattern = '|'.join(parts)
-                    custom_concepts[concept.strip()] = re.compile(cleaned_pattern, re.I)
+                    try:
+                        custom_concepts[concept.strip()] = re.compile(cleaned_pattern, re.I)
+                    except re.error as e:
+                        self.log(f"Invalid regex pattern for concept '{concept.strip()}': {e}")
+                        continue
         
         # Run in a separate thread
         self.run_tracker_btn.config(state=tk.DISABLED)
@@ -560,14 +564,20 @@ Created by Eden with assistance from Atlas
             self.open_obsidian_btn.config(state=tk.NORMAL)
             self.run_tracker_btn.config(state=tk.NORMAL)
 
-            # --- Add call to copy conversations ---
-            try:
-                data_dir_for_copy = os.path.join(self.config["output_dir"], "data")
-                self.copy_conversations_to_obsidian(data_dir_for_copy, obsidian_dir)
-                self.update_status("Concept tracking and conversation copy complete")
-            except Exception as copy_e:
-                self.log(f"Error copying conversations to Obsidian: {copy_e}")
-                self.update_status("Concept tracking complete, but conversation copy failed")
+        except Exception as e:
+            self.log(f"Error in concept tracking: {str(e)}")
+            self.update_status("Concept tracking failed")
+            self.run_tracker_btn.config(state=tk.NORMAL)
+            return
+
+        # --- Add call to copy conversations ---
+        try:
+            data_dir_for_copy = os.path.join(self.config["output_dir"], "data")
+            self.copy_conversations_to_obsidian(data_dir_for_copy, obsidian_dir)
+            self.update_status("Concept tracking and conversation copy complete")
+        except Exception as copy_e:
+            self.log(f"Error copying conversations to Obsidian: {copy_e}")
+            self.update_status("Concept tracking complete, but conversation copy failed")
             # --- End of added call ---
             
         except Exception as e:
@@ -757,7 +767,7 @@ Created by Eden with assistance from Atlas
             
             if content and content.get("content_type") == "text":
                 parts = content.get("parts", [])
-                if parts and parts[0].strip():
+                if parts and isinstance(parts[0], str) and parts[0].strip():
                     if author != "system" or (message.get("metadata", {}) if message else {}).get("is_user_system_message"):
                         if author == "assistant":
                             author = self.config["assistant_name"]
