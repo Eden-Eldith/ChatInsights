@@ -502,6 +502,42 @@ Created by Eden with assistance from Atlas
             self.analyze_btn.config(state=tk.NORMAL)
             self.update_status("Processing failed")
     
+    def parse_concept_regex(self, content):
+        """Parse the Concept-regex.md format into concept patterns"""
+        concepts = {}
+        lines = content.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+                
+            if ':' in line:
+                concept_name, patterns = line.split(':', 1)
+                concept_name = concept_name.strip()
+                pattern_text = patterns.strip()
+                
+                # Clean up the pattern - add word boundaries and handle pipes
+                pattern_parts = []
+                for part in pattern_text.split('|'):
+                    part = part.strip()
+                    if part and not part.startswith('\\b') and not part.endswith('\\b'):
+                        # Add word boundaries for standalone terms
+                        if ' ' not in part:  # Single word
+                            part = f'\\b{part}\\b'
+                        else:  # Multi-word phrase
+                            part = part.replace(' ', '\\s+')
+                    pattern_parts.append(part)
+                
+                if pattern_parts:
+                    try:
+                        final_pattern = '|'.join(pattern_parts)
+                        concepts[concept_name] = re.compile(final_pattern, re.I)
+                    except re.error as e:
+                        self.log(f"Invalid regex for {concept_name}: {e}")
+        
+        return concepts
+    
     def run_concept_tracker(self):
         """Run the concept tracker on processed data"""
         data_dir = os.path.join(self.config["output_dir"], "data")
@@ -511,21 +547,13 @@ Created by Eden with assistance from Atlas
             messagebox.showerror("Error", "Conversation titles file not found. Please process the ChatGPT export first.")
             return
         
-        # Get custom concepts from UI
-        custom_concepts = {}
-        for line in self.concepts_text.get("1.0", tk.END).strip().split('\n'):
-            if line and ':' in line:
-                concept, pattern = line.split(':', 1)
-                if concept and pattern:
-                    cleaned_pattern = pattern.strip()
-                    if '|' in cleaned_pattern:
-                        parts = [part.strip() for part in cleaned_pattern.split('|') if part.strip()]
-                        cleaned_pattern = '|'.join(parts)
-                    try:
-                        custom_concepts[concept.strip()] = re.compile(cleaned_pattern, re.I)
-                    except re.error as e:
-                        self.log(f"Invalid regex pattern for concept '{concept.strip()}': {e}")
-                        continue
+        # Get custom concepts from UI using the new parser
+        concepts_text = self.concepts_text.get("1.0", tk.END).strip()
+        custom_concepts = self.parse_concept_regex(concepts_text)
+        
+        if not custom_concepts:
+            messagebox.showwarning("Warning", "No valid concepts found. Using default concepts.")
+            custom_concepts = None
         
         # Run in a separate thread
         self.run_tracker_btn.config(state=tk.DISABLED)
@@ -549,7 +577,8 @@ Created by Eden with assistance from Atlas
             
             # Display results
             self.stats_text.delete("1.0", tk.END)
-            self.stats_text.insert(tk.END, f"Processed {results['conversations']} conversations\n\n")
+            self.stats_text.insert(tk.END, f"Processed {results['conversations']} conversations\n")
+            self.stats_text.insert(tk.END, f"Orphaned conversations: {results['orphaned']}\n\n")
             self.stats_text.insert(tk.END, "Concept mentions:\n")
             
             for concept, count in sorted(results['concepts'].items(), key=lambda x: x[1], reverse=True):
@@ -1009,6 +1038,23 @@ Created by Eden with assistance from Atlas
             
             return recurring_terms
         
+        def identify_orphaned_conversations(self, conversations, concept_mentions):
+            """Identify conversations not matched by any concept"""
+            orphaned = []
+            matched_ids = set()
+            
+            # Collect all matched conversation IDs
+            for concept, mentions in concept_mentions.items():
+                for conv in mentions:
+                    matched_ids.add(conv['id'])
+            
+            # Find orphans
+            for conv in conversations:
+                if conv['id'] not in matched_ids:
+                    orphaned.append(conv)
+            
+            return orphaned
+
         def analyze_concept_evolution(self, concept_mentions, conversations):
             """Analyze how concepts evolved over time."""
             evolution = {}
@@ -1038,7 +1084,6 @@ Created by Eden with assistance from Atlas
                     'monthly_trend': monthly_counts,
                     'total_mentions': len(mentions)
                 }
-            
             return evolution
         
         def find_related_concepts(self, concept_mentions, threshold=0.3):
@@ -1079,6 +1124,40 @@ Created by Eden with assistance from Atlas
                 related[concept].sort(key=lambda x: x['similarity'], reverse=True)
             
             return related
+
+        def generate_orphan_analysis(self, orphaned_conversations, output_dir):
+            """Generate analysis of orphaned conversations"""
+            if not orphaned_conversations:
+                return
+            
+            orphan_path = os.path.join(output_dir, "Orphaned-Conversations.md")
+            
+            with open(orphan_path, 'w', encoding='utf-8') as f:
+                f.write("---\ntags:\n  - orphans\n  - analysis\n---\n\n")
+                f.write("# Orphaned Conversations Analysis\n\n")
+                f.write(f"Found {len(orphaned_conversations)} conversations not matched by any concept.\n\n")
+                
+                # Extract common terms from orphans to suggest new concepts
+                all_words = []
+                for conv in orphaned_conversations:
+                    words = re.findall(r'\b[A-Za-z][A-Za-z0-9]{2,}\b', conv['title'])
+                    all_words.extend([w for w in words if len(w) > 3])
+                
+                word_counts = Counter(all_words)
+                common_terms = {word: count for word, count in word_counts.items() 
+                               if count >= 2}  # Terms appearing at least twice
+                
+                if common_terms:
+                    f.write("## Suggested Additional Concepts\n\n")
+                    f.write("Based on orphaned conversation titles, consider adding these concepts:\n\n")
+                    
+                    for term, count in sorted(common_terms.items(), key=lambda x: x[1], reverse=True)[:20]:
+                        f.write(f"- `{term}` ({count} occurrences)\n")
+                
+                f.write("\n## Orphaned Conversations List\n\n")
+                for conv in orphaned_conversations:
+                    clean_filename = conv['clean_filename']
+                    f.write(f"- [[{clean_filename}]] - {conv['date']} - *{conv['title']}*\n")
 
         def generate_concept_notes(self, concept_mentions, evolution, related_concepts, output_dir):
             """Generate Obsidian notes for each concept."""
@@ -1177,9 +1256,9 @@ Created by Eden with assistance from Atlas
                 f.write("\n## Concept Categories\n\n")
                 f.write("- [[AI Systems]]\n")
                 f.write("- [[Programming Projects]]\n")
-                f.write("- [[Server Administration]]\n")
-                f.write("- [[Gaming Topics]]\n")
-                f.write("- [[Mental Health]]\n")
+                f.write("- [[Data Analysis]]\n")
+                f.write("- [[Development Topics]]\n")
+                f.write("- [[Security & Privacy]]\n")
                 
                 f.write("\n## Dataview Queries\n\n")
                 f.write("```dataview\nTABLE concept, mentions, first_mention\nFROM #concept\nSORT mentions DESC\n```\n")
@@ -1207,12 +1286,12 @@ Created by Eden with assistance from Atlas
                 f.write("## Concept Categories\n\n")
                 # Create a table of concept categories and their counts
                 categories = {
-                    'AI Systems': ['AI', 'GPT', 'Claude', 'LLM', 'ATLAS', 'Emergent'],
-                    'Programming': ['Python', 'Code', 'Script', 'Programming'],
-                    'Gaming': ['Squad', 'Server', 'Gaming'],
-                    'Research': ['Framework', 'Optimization', 'Quantum'],
-                    'Hardware': ['GPU', 'RTX', 'System', 'Hardware'],
-                    'Mental Health': ['Mental Health', 'Support', 'ADHD']
+                    'AI Systems': ['AI', 'GPT', 'Claude', 'LLM', 'Language Model'],
+                    'Programming': ['Python', 'JavaScript', 'Code', 'Programming', 'API'],
+                    'Data & Analysis': ['Data', 'Database', 'CSV', 'JSON', 'Analysis'],
+                    'Development': ['Development', 'Software', 'Application', 'Framework'],
+                    'Cloud & Infrastructure': ['Cloud', 'AWS', 'Azure', 'Deploy'],
+                    'Security': ['Security', 'Privacy', 'Encryption', 'Authentication']
                 }
                 
                 for category, related_terms in categories.items():
@@ -1265,10 +1344,15 @@ Created by Eden with assistance from Atlas
             additional_terms = self.extract_additional_terms(conversations)
             self.generate_term_analysis(additional_terms, output_dir)
             
+            # Identify and analyze orphaned conversations
+            orphaned_conversations = self.identify_orphaned_conversations(conversations, concept_mentions)
+            self.generate_orphan_analysis(orphaned_conversations, output_dir)
+            
             return {
                 'conversations': len(conversations),
                 'concepts': {concept: len(mentions) for concept, mentions in concept_mentions.items()},
-                'additional_terms': additional_terms
+                'additional_terms': additional_terms,
+                'orphaned': len(orphaned_conversations)
             }
 
 def main():
