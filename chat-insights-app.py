@@ -517,7 +517,11 @@ Created by Eden with assistance from Atlas
             if line and ':' in line:
                 concept, pattern = line.split(':', 1)
                 if concept and pattern:
-                    custom_concepts[concept.strip()] = re.compile(pattern.strip(), re.I)
+                    cleaned_pattern = pattern.strip()
+                    if '|' in cleaned_pattern:
+                        parts = [part.strip() for part in cleaned_pattern.split('|') if part.strip()]
+                        cleaned_pattern = '|'.join(parts)
+                    custom_concepts[concept.strip()] = re.compile(cleaned_pattern, re.I)
         
         # Run in a separate thread
         self.run_tracker_btn.config(state=tk.DISABLED)
