@@ -242,6 +242,6 @@ ChatInsights/
 
 ## Credits
 
-- **Original Application (v1)**: Eden_Eldith (P.C O'Brien)
+- **Original Application (v1)**: Eden_Eldith (P.C O'Brien) & The Claude 3 Models
 - **v2 & v3 Enhancements**: GitHub Copilot (Claude Opus 4.5)
 - **December 2025**
