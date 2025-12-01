@@ -9,6 +9,30 @@ from datetime import datetime
 from collections import Counter
 import shutil
 
+"""
+ChatInsights v3 - AI Chat Analysis Tool
+=======================================
+A comprehensive tool for analyzing and extracting insights from AI chat conversations.
+Supports ChatGPT, Claude, and Deepseek conversation exports.
+
+Features:
+- Auto-detection of platform (ChatGPT/Claude/Deepseek)
+- Model identification in output headers
+- Claude thinking block extraction
+- Claude conversation summary extraction
+- Deepseek reasoning chain extraction
+- Concept tracking with Obsidian integration
+- Training data generation for LLM fine-tuning
+
+v3 Improvements by GitHub Copilot (Claude Opus 4.5):
+- Added Claude thinking block extraction (content.type='thinking')
+- Added Claude conversation summary extraction
+- Added automatic model-slug headers to all output files
+- Enhanced message processing for all platforms
+
+Original application structure by Eden_Eldith(P.C O'Brien).
+"""
+
 # Global variables
 OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "ChatInsights")
 CONFIG_FILE = os.path.join(OUTPUT_DIR, "config.json")
@@ -16,22 +40,23 @@ CONFIG_FILE = os.path.join(OUTPUT_DIR, "config.json")
 class ChatInsightsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("ChatInsights - AI Chat Analysis Tool")
+        self.root.title("ChatInsights v3 - AI Chat Analysis Tool (ChatGPT, Claude & Deepseek)")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
         
         # Default configuration
         self.config = {
-            "assistant_name": "Atlas",
-            "user_name": "Eden",
-            "system_name": "Custom Eden info",
+            "assistant_name": "Assistant",
+            "user_name": "User",
+            "system_name": "System",
             "output_dir": OUTPUT_DIR,
             "last_import_file": "",
             "themes": {
                 "dark": {"bg": "#2e2e2e", "fg": "#ffffff", "button": "#3d3d3d", "highlight": "#4a86e8"},
                 "light": {"bg": "#f0f0f0", "fg": "#333333", "button": "#e0e0e0", "highlight": "#4a86e8"}
             },
-            "current_theme": "light"
+            "current_theme": "light",
+            "last_platform": "auto"  # auto, chatgpt, claude
         }
         self.load_config()
         
@@ -104,7 +129,7 @@ class ChatInsightsApp:
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # File selection
-        file_frame = ttk.LabelFrame(frame, text="ChatGPT JSON Export File")
+        file_frame = ttk.LabelFrame(frame, text="AI Chat Export File (ChatGPT, Claude or Deepseek)")
         file_frame.pack(fill=tk.X, pady=10)
         
         self.file_path_var = tk.StringVar()
@@ -116,6 +141,21 @@ class ChatInsightsApp:
         
         browse_btn = ttk.Button(file_frame, text="Browse", command=self.browse_file)
         browse_btn.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Platform selection
+        platform_frame = ttk.LabelFrame(frame, text="Platform Selection")
+        platform_frame.pack(fill=tk.X, pady=10)
+        
+        self.platform_var = tk.StringVar(value=self.config.get("last_platform", "auto"))
+        
+        ttk.Radiobutton(platform_frame, text="Auto-detect", variable=self.platform_var, value="auto").pack(side=tk.LEFT, padx=10, pady=5)
+        ttk.Radiobutton(platform_frame, text="ChatGPT", variable=self.platform_var, value="chatgpt").pack(side=tk.LEFT, padx=10, pady=5)
+        ttk.Radiobutton(platform_frame, text="Claude", variable=self.platform_var, value="claude").pack(side=tk.LEFT, padx=10, pady=5)
+        ttk.Radiobutton(platform_frame, text="Deepseek", variable=self.platform_var, value="deepseek").pack(side=tk.LEFT, padx=10, pady=5)
+        
+        # Platform info label
+        self.platform_info = ttk.Label(platform_frame, text="", foreground="blue")
+        self.platform_info.pack(side=tk.RIGHT, padx=10, pady=5)
         
         # Processing options
         options_frame = ttk.LabelFrame(frame, text="Processing Options")
@@ -157,7 +197,7 @@ class ChatInsightsApp:
         buttons_frame = ttk.Frame(frame)
         buttons_frame.pack(fill=tk.X, pady=10)
         
-        self.process_btn = ttk.Button(buttons_frame, text="Process ChatGPT Export", command=self.process_export)
+        self.process_btn = ttk.Button(buttons_frame, text="Process AI Export", command=self.process_export)
         self.process_btn.pack(side=tk.LEFT, padx=5)
         
         self.analyze_btn = ttk.Button(buttons_frame, text="Process & Analyze Concepts", command=self.process_and_analyze)
@@ -181,6 +221,49 @@ class ChatInsightsApp:
         self.open_output_btn.pack(pady=5)
         self.open_output_btn.config(state=tk.DISABLED)
     
+    def detect_platform(self, data):
+        """Detect whether the JSON is from ChatGPT, Claude or Deepseek"""
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                first_item = data[0]
+                
+                # Check for Deepseek first - has mapping with messages that use 'fragments'
+                if 'mapping' in first_item:
+                    mapping = first_item.get('mapping', {})
+                    for key, node in mapping.items():
+                        if isinstance(node, dict) and 'message' in node:
+                            msg = node.get('message')
+                            if isinstance(msg, dict) and 'fragments' in msg:
+                                return "deepseek"
+                    # If no fragments found, it's ChatGPT format
+                    return "chatgpt"
+                
+                # Check for conversation_id (ChatGPT)
+                if 'conversation_id' in first_item:
+                    return "chatgpt"
+                
+                # Check for Claude structure - look for uuid and chat_messages
+                if 'uuid' in first_item:
+                    if 'chat_messages' in first_item or 'name' in first_item:
+                        return "claude"
+                        
+        elif isinstance(data, dict):
+            if 'conversations' in data:
+                return self.detect_platform(data['conversations'])
+        
+        # Try to detect by message structure
+        try:
+            if isinstance(data, list) and len(data) > 0:
+                first_item = data[0]
+                if 'chat_messages' in first_item and isinstance(first_item['chat_messages'], list):
+                    return "claude"
+                if 'uuid' in first_item and ('created_at' in first_item or 'updated_at' in first_item):
+                    return "claude"
+        except:
+            pass
+        
+        return "unknown"
+    
     def create_concepts_tab(self):
         """Create concept tracking tab"""
         frame = ttk.Frame(self.concepts_tab)
@@ -194,7 +277,9 @@ class ChatInsightsApp:
 The Concept Tracker analyzes your conversations to identify key topics and how they evolve over time.
 It generates an Obsidian-compatible vault with concept notes, maps of content, and dashboards.
 
-Once you've processed your ChatGPT export, you can run the concept tracker to:
+Works with ChatGPT, Claude, and Deepseek conversation exports!
+
+Once you've processed your AI export, you can run the concept tracker to:
 1. Identify recurring themes and topics in your conversations
 2. Track how concepts evolve over time
 3. Discover relationships between different concepts
@@ -213,17 +298,18 @@ Once you've processed your ChatGPT export, you can run the concept tracker to:
         
         # Add default concepts
         default_concepts = """
-AI: \\bAI\\b|Artificial Intelligence|GPT|Claude|LLM
-ATLAS: \\bATLAS\\b|A_T_L_A_S
-MACO: \\bMACO\\b|MACAO|Multiple Ant Colony
-Server: Server|RCON|Admin|Discord Bot
-Framework: Framework|Structure|System
-Python: Python|Script|Code|Programming
-Emergent: Emergent|Resonance|Cognition
-Optimization: Optimization|Optimizer|Performance
-Mental Health: Mental Health|Depression|Anxiety|Support
-Neurodiversity: Neuro|ADHD|Autism
-"""
+AI: \\bAI\\b|Artificial Intelligence|GPT|Claude|LLM|Language Model|Deepseek
+Claude: \\bClaude\\b|Anthropic
+ChatGPT: \\bChatGPT\\b|\\bGPT\\b|OpenAI
+Deepseek: \\bDeepseek\\b|\\bDeepSeek\\b
+Programming: Python|JavaScript|Code|Programming|Script|Function|API
+Framework: Framework|Library|Architecture|Structure|System
+Data: Data|Database|CSV|JSON|Analysis|Dataset
+Machine Learning: Machine Learning|ML|Training|Model|Neural|Deep Learning
+Development: Development|Software|Application|Project|Build
+Security: Security|Privacy|Encryption|Authentication|Safety
+Cloud: Cloud|AWS|Azure|Google Cloud|Deployment
+        """
         self.concepts_text.insert(tk.END, default_concepts.strip())
         
         # Run tracker button
@@ -257,6 +343,8 @@ Neurodiversity: Neuro|ADHD|Autism
         info_text = """
 This tool can generate instruction-response pairs from your conversations for fine-tuning your own LLM models.
 The training data is exported in JSONL format, with each line containing an instruction and its corresponding response.
+
+Supports ChatGPT, Claude, and Deepseek conversation formats!
 
 You can use this data to:
 1. Fine-tune existing LLM models to respond more like your assistant
@@ -340,15 +428,27 @@ You can use this data to:
         about_frame.pack(fill=tk.X, pady=10)
         
         about_text = """
-ChatInsights v1.0
+ChatInsights v3.0
 A tool for analyzing and extracting insights from your AI chat conversations.
 
+Now supports ChatGPT, Claude, and Deepseek conversation exports!
+
 This application combines the functionality of:
-- The ChatGPT export processor (converting JSON to readable text files)
+- AI chat export processor (converting JSON to readable text files)
 - The Concept Tracker (analyzing topics and their evolution)
 - Training data generator (creating instruction-response pairs for LLM fine-tuning)
 
-Created by Eden with assistance from Atlas
+Features:
+- Auto-detection of ChatGPT vs Claude vs Deepseek exports
+- Universal conversation processing
+- Cross-platform concept tracking
+- Training data generation from multiple AI assistants
+- Deepseek thinking/response fragment support
+- Claude thinking block extraction
+- Claude conversation summary extraction
+- Automatic model identification in output headers
+
+v3 Improvements by GitHub Copilot (Claude Opus 4.5)
         """
         
         about_label = ttk.Label(about_frame, text=about_text, wraplength=600, justify=tk.LEFT)
@@ -357,13 +457,26 @@ Created by Eden with assistance from Atlas
     def browse_file(self):
         """Open file dialog to select conversations.json"""
         filename = filedialog.askopenfilename(
-            title="Select ChatGPT Export File",
+            title="Select AI Export File (ChatGPT or Claude)",
             filetypes=(("JSON files", "*.json"), ("All files", "*.*"))
         )
         if filename:
             self.file_path_var.set(filename)
             self.config["last_import_file"] = filename
             self.save_config()
+            
+            # Try to auto-detect platform
+            try:
+                with open(filename, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                platform = self.detect_platform(data)
+                if platform != "unknown":
+                    self.platform_var.set(platform)
+                    self.platform_info.config(text=f"Detected: {platform.upper()}")
+                else:
+                    self.platform_info.config(text="Unable to auto-detect, please select manually")
+            except Exception as e:
+                self.platform_info.config(text="Error reading file")
     
     def browse_output_dir(self):
         """Open directory dialog to select output location"""
@@ -391,10 +504,10 @@ Created by Eden with assistance from Atlas
         self.root.update_idletasks()
     
     def process_export(self):
-        """Process the ChatGPT export file"""
+        """Process the AI export file"""
         file_path = self.file_path_var.get()
         if not file_path or not os.path.exists(file_path):
-            messagebox.showerror("Error", "Please select a valid ChatGPT export file")
+            messagebox.showerror("Error", "Please select a valid AI export file")
             return
         
         # Update config
@@ -402,6 +515,7 @@ Created by Eden with assistance from Atlas
         self.config["user_name"] = self.user_name_var.get()
         self.config["assistant_name"] = self.assistant_name_var.get()
         self.config["system_name"] = self.system_name_var.get()
+        self.config["last_platform"] = self.platform_var.get()
         self.save_config()
         
         # Run in a separate thread to keep UI responsive
@@ -416,7 +530,7 @@ Created by Eden with assistance from Atlas
         """Process export and then run concept tracker"""
         file_path = self.file_path_var.get()
         if not file_path or not os.path.exists(file_path):
-            messagebox.showerror("Error", "Please select a valid ChatGPT export file")
+            messagebox.showerror("Error", "Please select a valid AI export file")
             return
         
         # Update config
@@ -424,6 +538,7 @@ Created by Eden with assistance from Atlas
         self.config["user_name"] = self.user_name_var.get()
         self.config["assistant_name"] = self.assistant_name_var.get()
         self.config["system_name"] = self.system_name_var.get()
+        self.config["last_platform"] = self.platform_var.get()
         self.save_config()
         
         # Run in a separate thread to keep UI responsive
@@ -437,20 +552,39 @@ Created by Eden with assistance from Atlas
     def _process_export_thread(self, file_path):
         """Background thread for processing exports"""
         try:
-            self.update_status("Processing ChatGPT export...")
-            self.log("Starting to process ChatGPT export file...")
+            self.update_status("Processing AI export...")
+            self.log("Starting to process AI export file...")
             
             output_dir = self.config["output_dir"]
             data_dir = os.path.join(output_dir, "data")
             os.makedirs(data_dir, exist_ok=True)
             
-            # Load the ChatGPT export
+            # Load the export
             with open(file_path, 'r', encoding='utf-8') as f:
                 conversations_data = json.load(f)
             
-            # Process conversations
-            self.log(f"Processing {len(conversations_data)} conversations...")
-            created_dirs, pruned_data = self.write_conversations_and_json(conversations_data, data_dir)
+            # Detect platform
+            platform = self.platform_var.get()
+            if platform == "auto":
+                platform = self.detect_platform(conversations_data)
+                self.log(f"Auto-detected platform: {platform}")
+            
+            if platform == "unknown":
+                self.log("Unable to detect platform. Please select manually.")
+                messagebox.showerror("Error", "Unable to detect export format. Please select the platform manually.")
+                self.process_btn.config(state=tk.NORMAL)
+                self.analyze_btn.config(state=tk.NORMAL)
+                return
+            
+            # Process conversations based on platform
+            self.log(f"Processing {platform.upper()} export with {len(conversations_data) if isinstance(conversations_data, list) else 'unknown number of'} conversations...")
+            
+            if platform == "chatgpt":
+                created_dirs, pruned_data = self.process_chatgpt_conversations(conversations_data, data_dir)
+            elif platform == "deepseek":
+                created_dirs, pruned_data = self.process_deepseek_conversations(conversations_data, data_dir)
+            else:  # claude
+                created_dirs, pruned_data = self.process_claude_conversations(conversations_data, data_dir)
             
             # Create training pairs
             self.log("Generating training data pairs...")
@@ -461,12 +595,12 @@ Created by Eden with assistance from Atlas
             titles_file = self.generate_conversation_titles(data_dir)
             
             self.log("Processing complete!")
-            self.log(f"Processed {len(conversations_data)} conversations")
+            self.log(f"Processed {len(created_dirs)} conversations")
             self.log(f"Created files in {len(set([info['directory'] for info in created_dirs]))} directories")
             self.log(f"Generated {len(training_pairs)} training data pairs")
             
             # Update result
-            self.result_text.config(text=f"Successfully processed {len(conversations_data)} conversations. " +
+            self.result_text.config(text=f"Successfully processed {len(created_dirs)} {platform.upper()} conversations. " +
                                       f"Generated {len(training_pairs)} training pairs and prepared data for concept tracking.")
             
             # Enable buttons
@@ -544,7 +678,7 @@ Created by Eden with assistance from Atlas
         titles_file = os.path.join(data_dir, "conversation_titles.txt")
         
         if not os.path.exists(titles_file):
-            messagebox.showerror("Error", "Conversation titles file not found. Please process the ChatGPT export first.")
+            messagebox.showerror("Error", "Conversation titles file not found. Please process the AI export first.")
             return
         
         # Get custom concepts from UI using the new parser
@@ -593,21 +727,14 @@ Created by Eden with assistance from Atlas
             self.open_obsidian_btn.config(state=tk.NORMAL)
             self.run_tracker_btn.config(state=tk.NORMAL)
 
-        except Exception as e:
-            self.log(f"Error in concept tracking: {str(e)}")
-            self.update_status("Concept tracking failed")
-            self.run_tracker_btn.config(state=tk.NORMAL)
-            return
-
-        # --- Add call to copy conversations ---
-        try:
-            data_dir_for_copy = os.path.join(self.config["output_dir"], "data")
-            self.copy_conversations_to_obsidian(data_dir_for_copy, obsidian_dir)
-            self.update_status("Concept tracking and conversation copy complete")
-        except Exception as copy_e:
-            self.log(f"Error copying conversations to Obsidian: {copy_e}")
-            self.update_status("Concept tracking complete, but conversation copy failed")
-            # --- End of added call ---
+            # Copy conversations to Obsidian
+            try:
+                data_dir_for_copy = os.path.join(self.config["output_dir"], "data")
+                self.copy_conversations_to_obsidian(data_dir_for_copy, obsidian_dir)
+                self.update_status("Concept tracking and conversation copy complete")
+            except Exception as copy_e:
+                self.log(f"Error copying conversations to Obsidian: {copy_e}")
+                self.update_status("Concept tracking complete, but conversation copy failed")
             
         except Exception as e:
             self.log(f"Error in concept tracker: {str(e)}")
@@ -619,29 +746,30 @@ Created by Eden with assistance from Atlas
         """Copy .txt conversation files to Obsidian vault as .md files"""
         self.log("Copying conversation logs to Obsidian vault...")
         source_data_dir = data_dir
-        # Place conversations in a dedicated subfolder within the Obsidian vault
         target_obsidian_convos_dir = os.path.join(obsidian_dir, "Conversations") 
         os.makedirs(target_obsidian_convos_dir, exist_ok=True)
         
         copied_count = 0
         skipped_count = 0
         for root, _, files in os.walk(source_data_dir):
+            # Skip the cleanup directory
+            if "_empty_untitled_cleanup" in root:
+                continue
             for file in files:
-                # Only process .txt files, excluding specific metadata/output files
                 if file.endswith(".txt") and file not in ["conversation_titles.txt", "training_data.txt"]:
+                    # Skip empty untitled files
                     src_path = os.path.join(root, file)
+                    if 'untitled' in file.lower() and os.path.getsize(src_path) == 0:
+                        continue
                     
-                    # Determine relative path to preserve structure
                     relative_path = os.path.relpath(root, source_data_dir)
                     target_subdir = os.path.join(target_obsidian_convos_dir, relative_path)
                     os.makedirs(target_subdir, exist_ok=True)
                     
-                    # Define destination path and rename to .md
                     dest_filename = file[:-4] + ".md"
                     dest_path = os.path.join(target_subdir, dest_filename)
                     
                     try:
-                        # Use copy2 to preserve metadata like modification time
                         shutil.copy2(src_path, dest_path) 
                         copied_count += 1
                     except Exception as e:
@@ -658,7 +786,7 @@ Created by Eden with assistance from Atlas
         pruned_file = os.path.join(data_dir, "pruned.json")
         
         if not os.path.exists(pruned_file):
-            messagebox.showerror("Error", "Processed conversation data not found. Please process the ChatGPT export first.")
+            messagebox.showerror("Error", "Processed conversation data not found. Please process the AI export first.")
             return
         
         # Run in a separate thread
@@ -736,15 +864,12 @@ Created by Eden with assistance from Atlas
     
     def apply_theme(self):
         """Apply the selected theme"""
-        # This is a placeholder - would need more advanced styling code
-        # to fully implement theming with ttk
         self.config["current_theme"] = self.theme_var.get()
         self.save_config()
         messagebox.showinfo("Theme Changed", "Theme will be fully applied when you restart the application")
     
     def save_settings(self):
         """Save current settings to config file"""
-        # Update config with current UI values
         self.config["output_dir"] = self.output_dir_var.get()
         self.config["user_name"] = self.user_name_var.get()
         self.config["assistant_name"] = self.assistant_name_var.get()
@@ -757,21 +882,20 @@ Created by Eden with assistance from Atlas
     def reset_settings(self):
         """Reset settings to defaults"""
         if messagebox.askyesno("Reset Settings", "Are you sure you want to reset all settings to defaults?"):
-            # Reset to defaults
             self.config = {
-                "assistant_name": "Atlas",
-                "user_name": "Eden",
-                "system_name": "Custom Eden info",
+                "assistant_name": "Assistant",
+                "user_name": "User",
+                "system_name": "System",
                 "output_dir": os.path.join(os.path.expanduser("~"), "ChatInsights"),
                 "last_import_file": "",
                 "themes": {
                     "dark": {"bg": "#2e2e2e", "fg": "#ffffff", "button": "#3d3d3d", "highlight": "#4a86e8"},
                     "light": {"bg": "#f0f0f0", "fg": "#333333", "button": "#e0e0e0", "highlight": "#4a86e8"}
                 },
-                "current_theme": "light"
+                "current_theme": "light",
+                "last_platform": "auto"
             }
             
-            # Update UI
             self.output_dir_var.set(self.config["output_dir"])
             self.user_name_var.set(self.config["user_name"])
             self.assistant_name_var.set(self.config["assistant_name"])
@@ -781,9 +905,9 @@ Created by Eden with assistance from Atlas
             self.save_config()
             messagebox.showinfo("Settings Reset", "Settings have been reset to defaults")
     
-    # Conversation processing functions (from chatjson_splitter.py)
-    def get_conversation_messages(self, conversation):
-        """Get messages from a conversation"""
+    # ChatGPT processing functions
+    def get_chatgpt_messages(self, conversation):
+        """Get messages from a ChatGPT conversation"""
         messages = []
         current_node = conversation.get("current_node")
         mapping = conversation.get("mapping", {})
@@ -810,8 +934,28 @@ Created by Eden with assistance from Atlas
         
         return messages[::-1]
     
-    def write_conversations_and_json(self, conversations_data, data_dir):
-        """Write conversations to text files and create pruned.json"""
+    def get_chatgpt_model_slug(self, conversation):
+        """Extract model_slug from ChatGPT conversation metadata"""
+        mapping = conversation.get("mapping", {})
+        
+        # Look through all messages to find the model_slug
+        for node_id, node in mapping.items():
+            if not isinstance(node, dict):
+                continue
+            message = node.get("message")
+            if not message or not isinstance(message, dict):
+                continue
+            
+            metadata = message.get("metadata", {})
+            if metadata and isinstance(metadata, dict):
+                model_slug = metadata.get("model_slug")
+                if model_slug:
+                    return model_slug
+        
+        return "ChatGPT"  # Default fallback
+    
+    def process_chatgpt_conversations(self, conversations_data, data_dir):
+        """Process ChatGPT conversations with model headers"""
         created_directories_info = []
         pruned_data = {}
         
@@ -824,22 +968,29 @@ Created by Eden with assistance from Atlas
             directory_name = updated_date.strftime('%B_%Y')
             directory_path = os.path.join(data_dir, directory_name)
             
-            # Ensure the month-year directory exists
             os.makedirs(directory_path, exist_ok=True)
             
             title = conversation.get('title', 'Untitled')
+            
+            # NEW: Extract model_slug from conversation
+            model_slug = self.get_chatgpt_model_slug(conversation)
+            
             sanitized_title = re.sub(r"[^a-zA-Z0-9_]", "_", title)[:120]
             file_name = os.path.join(directory_path, f"{sanitized_title}_{updated_date.strftime('%d_%m_%Y_%H_%M_%S')}.txt")
             
-            messages = self.get_conversation_messages(conversation)
+            messages = self.get_chatgpt_messages(conversation)
             
-            # Write conversation to a text file
             with open(file_name, 'w', encoding="utf-8") as file:
+                # NEW: Write model header at the top
+                file.write(f"# Model: {model_slug}\n")
+                file.write(f"# Title: {title}\n")
+                file.write(f"# Date: {updated_date.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                file.write(f"\n{'='*60}\n\n")
+                
                 for message in messages:
                     file.write(f"{message['author']}\n")
-                    file.write(f"{message['text']}\n")
+                    file.write(f"{message['text']}\n\n")
             
-            # Store conversation metadata in pruned.json
             if directory_name not in pruned_data:
                 pruned_data[directory_name] = []
             
@@ -847,6 +998,7 @@ Created by Eden with assistance from Atlas
                 "title": title,
                 "create_time": datetime.fromtimestamp(conversation.get('create_time')).strftime('%Y-%m-%d %H:%M:%S'),
                 "update_time": updated_date.strftime('%Y-%m-%d %H:%M:%S'),
+                "model": model_slug,
                 "messages": messages
             })
             
@@ -855,7 +1007,437 @@ Created by Eden with assistance from Atlas
                 "file": file_name
             })
         
-        # Save pruned conversations to pruned.json inside data directory
+        pruned_json_path = os.path.join(data_dir, "pruned.json")
+        with open(pruned_json_path, 'w', encoding='utf-8') as json_file:
+            json.dump(pruned_data, json_file, ensure_ascii=False, indent=4)
+        
+        return created_directories_info, pruned_data
+    
+    def get_claude_messages(self, conversation):
+        """Get messages from a Claude conversation, including thinking blocks"""
+        messages = []
+        
+        # Debug: Check what fields are available
+        if 'chat_messages' in conversation:
+            chat_messages = conversation['chat_messages']
+            
+            # If it's a list, process each message
+            if isinstance(chat_messages, list):
+                for i, msg in enumerate(chat_messages):
+                    # Debug: log the structure of the first message
+                    if i == 0 and isinstance(msg, dict):
+                        self.log(f"Debug - First message keys: {list(msg.keys())}")
+                    
+                    # Handle different possible message structures
+                    sender = None
+                    
+                    # Check if message has direct text/content
+                    if isinstance(msg, dict):
+                        sender = msg.get('sender', '') or msg.get('role', '') or msg.get('author', '')
+                        
+                        # NEW: Check for 'content' array with typed content blocks (thinking, text, etc.)
+                        content_array = msg.get('content', [])
+                        if isinstance(content_array, list) and content_array:
+                            # Process each content block in the array
+                            for content_block in content_array:
+                                if isinstance(content_block, dict):
+                                    block_type = content_block.get('type', 'text')
+                                    
+                                    # Handle thinking blocks
+                                    if block_type == 'thinking':
+                                        thinking_text = content_block.get('thinking', '')
+                                        if thinking_text and thinking_text.strip():
+                                            # Map sender types to our naming convention with (Thinking) suffix
+                                            if sender.lower() in ['assistant', 'claude']:
+                                                author = f"{self.config['assistant_name']} (Thinking)"
+                                            else:
+                                                author = f"{sender} (Thinking)"
+                                            messages.append({"author": author, "text": str(thinking_text)})
+                                    
+                                    # Handle regular text blocks
+                                    elif block_type == 'text':
+                                        text_content = content_block.get('text', '')
+                                        if text_content and text_content.strip():
+                                            # Map sender types to our naming convention
+                                            if sender.lower() in ['human', 'user']:
+                                                author = self.config["user_name"]
+                                            elif sender.lower() in ['assistant', 'claude']:
+                                                author = self.config["assistant_name"]
+                                            else:
+                                                author = sender
+                                            messages.append({"author": author, "text": str(text_content)})
+                                    
+                                    # Handle tool_use blocks (log but typically skip content)
+                                    elif block_type == 'tool_use':
+                                        tool_name = content_block.get('name', 'unknown_tool')
+                                        tool_input = content_block.get('input', {})
+                                        # Optionally log tool usage
+                                        if sender.lower() in ['assistant', 'claude']:
+                                            author = f"{self.config['assistant_name']} (Tool Use)"
+                                        else:
+                                            author = f"{sender} (Tool Use)"
+                                        tool_text = f"[Using tool: {tool_name}]"
+                                        messages.append({"author": author, "text": tool_text})
+                                    
+                                    # Handle tool_result blocks
+                                    elif block_type == 'tool_result':
+                                        # Tool results are typically system-level, skip or minimal log
+                                        pass
+                            
+                            # If we processed content array, continue to next message
+                            if content_array:
+                                continue
+                        
+                        # Fallback: Try direct text field
+                        content = msg.get('text', '') or msg.get('message', '')
+                        
+                        # Handle string content field
+                        if not content and isinstance(content_array, str):
+                            content = content_array
+                        
+                        if content and sender:
+                            # Map sender types to our naming convention
+                            if sender.lower() in ['human', 'user']:
+                                author = self.config["user_name"]
+                            elif sender.lower() in ['assistant', 'claude']:
+                                author = self.config["assistant_name"]
+                            else:
+                                author = sender
+                            
+                            messages.append({"author": author, "text": str(content)})
+                    
+                    elif isinstance(msg, str):
+                        # Sometimes messages might be strings directly
+                        content = msg
+                        sender = 'unknown'
+                        messages.append({"author": sender, "text": str(content)})
+                    
+            elif isinstance(chat_messages, dict):
+                # Sometimes chat_messages might be a dict with indexed keys
+                self.log(f"Debug - chat_messages is a dict with keys: {list(chat_messages.keys())}")
+                # Try to process as indexed dict
+                for key in sorted(chat_messages.keys()):
+                    msg = chat_messages[key]
+                    if isinstance(msg, dict):
+                        content = msg.get('text', '') or msg.get('content', '') or msg.get('message', '')
+                        sender = msg.get('sender', '') or msg.get('role', '') or msg.get('author', '')
+                        
+                        if content and sender:
+                            if sender.lower() in ['human', 'user']:
+                                author = self.config["user_name"]
+                            elif sender.lower() in ['assistant', 'claude']:
+                                author = self.config["assistant_name"]
+                            else:
+                                author = sender
+                            
+                            messages.append({"author": author, "text": str(content)})
+        else:
+            # Log available fields if chat_messages not found
+            self.log(f"Debug - No 'chat_messages' found. Available keys: {list(conversation.keys())}")
+            
+            # Try alternative field names
+            for field in ['messages', 'message_history', 'history', 'chat']:
+                if field in conversation:
+                    self.log(f"Debug - Found '{field}' field, attempting to parse...")
+                    # Recursively call with modified conversation object
+                    mod_conv = {'chat_messages': conversation[field]}
+                    return self.get_claude_messages(mod_conv)
+        
+        if not messages and 'chat_messages' in conversation:
+            self.log(f"Debug - chat_messages found but no messages extracted. Type: {type(conversation['chat_messages'])}")
+        
+        return messages
+    
+    def process_claude_conversations(self, conversations_data, data_dir):
+        """Process Claude conversations with thinking blocks and summaries"""
+        created_directories_info = []
+        pruned_data = {}
+        
+        # Handle if conversations_data is wrapped or is directly a list
+        if isinstance(conversations_data, dict) and 'conversations' in conversations_data:
+            conversations_data = conversations_data['conversations']
+        
+        self.log(f"Debug - Processing {len(conversations_data)} Claude conversations")
+        
+        for idx, conversation in enumerate(conversations_data):
+            # Debug first conversation structure
+            if idx == 0:
+                self.log(f"Debug - First conversation keys: {list(conversation.keys())}")
+            
+            # Claude uses ISO timestamp format
+            created_at = conversation.get('created_at', '')
+            updated_at = conversation.get('updated_at', created_at)
+            
+            if not updated_at:
+                continue
+            
+            # Parse ISO format timestamp
+            try:
+                updated_date = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+            except:
+                # Fallback for other timestamp formats
+                continue
+            
+            directory_name = updated_date.strftime('%B_%Y')
+            directory_path = os.path.join(data_dir, directory_name)
+            
+            os.makedirs(directory_path, exist_ok=True)
+            
+            # Get title from conversation - Claude uses 'name' field
+            title = conversation.get('name', '')
+            if not title or title == '':
+                # Try to extract title from first message
+                messages = self.get_claude_messages(conversation)
+                if messages and len(messages) > 0:
+                    title = messages[0]['text'][:50] + "..." if len(messages[0]['text']) > 50 else messages[0]['text']
+                else:
+                    title = 'Untitled'
+            
+            # NEW: Extract conversation summary if available
+            conversation_summary = conversation.get('summary', '')
+            
+            # NEW: Try to detect model from messages or metadata
+            model_slug = "Claude"  # Default
+            # Claude doesn't typically include model slug in the same way as ChatGPT
+            # But we can check for model indicators in the data
+            if 'model' in conversation:
+                model_slug = conversation.get('model', 'Claude')
+            
+            sanitized_title = re.sub(r"[^a-zA-Z0-9_]", "_", title)[:120]
+            file_name = os.path.join(directory_path, f"{sanitized_title}_{updated_date.strftime('%d_%m_%Y_%H_%M_%S')}.txt")
+            
+            messages = self.get_claude_messages(conversation)
+            
+            # Only write file if there are messages
+            if messages:
+                with open(file_name, 'w', encoding="utf-8") as file:
+                    # NEW: Write model header at the top
+                    file.write(f"# Model: {model_slug}\n")
+                    file.write(f"# Title: {title}\n")
+                    file.write(f"# Date: {updated_date.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    
+                    # NEW: Write conversation summary if available
+                    if conversation_summary and conversation_summary.strip():
+                        file.write(f"\n## Conversation Summary\n")
+                        file.write(f"{conversation_summary}\n")
+                    
+                    file.write(f"\n{'='*60}\n\n")
+                    
+                    for message in messages:
+                        file.write(f"{message['author']}\n")
+                        file.write(f"{message['text']}\n\n")
+                
+                if directory_name not in pruned_data:
+                    pruned_data[directory_name] = []
+                
+                pruned_data[directory_name].append({
+                    "title": title,
+                    "create_time": created_at,
+                    "update_time": updated_at,
+                    "model": model_slug,
+                    "summary": conversation_summary,
+                    "messages": messages
+                })
+                
+                created_directories_info.append({
+                    "directory": directory_path,
+                    "file": file_name
+                })
+            else:
+                if idx < 5:  # Log first few conversations without messages
+                    self.log(f"Debug - Conversation '{title}' has no messages")
+        
+        self.log(f"Debug - Created {len(created_directories_info)} files with messages")
+        
+        pruned_json_path = os.path.join(data_dir, "pruned.json")
+        with open(pruned_json_path, 'w', encoding='utf-8') as json_file:
+            json.dump(pruned_data, json_file, ensure_ascii=False, indent=4)
+        
+        
+        # Cleanup empty untitled files
+        self.log("\nChecking for empty untitled files...")
+        cleanup_results = self.cleanup_empty_untitled_files(data_dir)
+        if cleanup_results['count'] > 0:
+            self.log(f"Cleanup completed: {cleanup_results['count']} empty untitled files moved")
+        
+        return created_directories_info, pruned_data
+    
+    def get_deepseek_messages(self, conversation):
+        """Get messages from a Deepseek conversation"""
+        messages = []
+        
+        # Deepseek uses same structure as ChatGPT but with 'fragments' instead of 'content'
+        # mapping contains nodes with: id, parent, children, message
+        # message contains: model, inserted_at, fragments (list of {type, content})
+        # Fragment types: REQUEST (user), RESPONSE (assistant), THINK (reasoning)
+        
+        mapping = conversation.get('mapping', {})
+        if not mapping:
+            return messages
+        
+        # Collect all message nodes with their data
+        message_nodes = []
+        for key, node in mapping.items():
+            if not isinstance(node, dict) or 'message' not in node:
+                continue
+            msg_data = node.get('message')
+            if not msg_data or not isinstance(msg_data, dict):
+                continue
+            
+            fragments = msg_data.get('fragments', [])
+            inserted_at = msg_data.get('inserted_at', '')
+            
+            if fragments:
+                message_nodes.append({
+                    'id': node.get('id', key),
+                    'parent': node.get('parent'),
+                    'inserted_at': inserted_at,
+                    'fragments': fragments
+                })
+        
+        # Sort by inserted_at timestamp
+        message_nodes.sort(key=lambda x: x.get('inserted_at', ''))
+        
+        # Process each message node
+        for node in message_nodes:
+            fragments = node.get('fragments', [])
+            
+            for fragment in fragments:
+                if not isinstance(fragment, dict):
+                    continue
+                
+                frag_type = fragment.get('type', '')
+                content = fragment.get('content', '')
+                
+                if not content or not content.strip():
+                    continue
+                
+                # Determine author based on fragment type
+                if frag_type == 'REQUEST':
+                    author = self.config["user_name"]
+                elif frag_type == 'THINK':
+                    author = f"{self.config['assistant_name']} (Thinking)"
+                elif frag_type == 'RESPONSE':
+                    author = self.config["assistant_name"]
+                else:
+                    # Unknown type, skip or treat as user
+                    author = self.config["user_name"]
+                
+                messages.append({"author": author, "text": content})
+        
+        return messages
+    
+    def get_deepseek_model(self, conversation):
+        """Extract model from Deepseek conversation"""
+        mapping = conversation.get('mapping', {})
+        
+        for node_id, node in mapping.items():
+            if not isinstance(node, dict):
+                continue
+            message = node.get('message')
+            if not message or not isinstance(message, dict):
+                continue
+            
+            model = message.get('model')
+            if model:
+                return model
+        
+        return "Deepseek"  # Default fallback
+    
+    def process_deepseek_conversations(self, conversations_data, data_dir):
+        """Process Deepseek conversations with model headers"""
+        created_directories_info = []
+        pruned_data = {}
+        
+        # Deepseek uses same top-level format as ChatGPT (list of conversations)
+        if isinstance(conversations_data, dict):
+            if 'conversations' in conversations_data:
+                conversations_data = conversations_data['conversations']
+            else:
+                conversations_data = [conversations_data]
+        
+        self.log(f"Debug - Processing {len(conversations_data)} Deepseek conversations")
+        
+        for idx, conversation in enumerate(conversations_data):
+            if idx == 0:
+                self.log(f"Debug - First conversation keys: {list(conversation.keys())}")
+            
+            # Get timestamps - Deepseek uses 'updated_at' and 'inserted_at' at conversation level
+            updated_at = conversation.get('updated_at', '') or conversation.get('inserted_at', '')
+            
+            if not updated_at:
+                continue
+            
+            # Parse ISO format timestamp
+            try:
+                # Handle various timezone formats
+                ts = updated_at.replace('Z', '+00:00')
+                if '+' in ts[10:]:
+                    ts = ts[:ts.rfind('+')]
+                updated_date = datetime.fromisoformat(ts[:19])
+            except Exception as e:
+                if idx < 3:
+                    self.log(f"Debug - Failed to parse timestamp '{updated_at}': {e}")
+                continue
+            
+            directory_name = updated_date.strftime('%B_%Y')
+            directory_path = os.path.join(data_dir, directory_name)
+            os.makedirs(directory_path, exist_ok=True)
+            
+            # Get title from conversation or first user message
+            title = conversation.get('title', '')
+            messages = self.get_deepseek_messages(conversation)
+            
+            if not title:
+                for msg in messages:
+                    if msg['author'] == self.config["user_name"]:
+                        title = msg['text'][:50].replace('\n', ' ')
+                        if len(msg['text']) > 50:
+                            title += "..."
+                        break
+            
+            if not title:
+                title = 'Untitled'
+            
+            # NEW: Extract model from conversation
+            model_slug = self.get_deepseek_model(conversation)
+            
+            sanitized_title = re.sub(r"[^a-zA-Z0-9_]", "_", title)[:120]
+            file_name = os.path.join(directory_path, f"{sanitized_title}_{updated_date.strftime('%d_%m_%Y_%H_%M_%S')}.txt")
+            
+            if messages:
+                with open(file_name, 'w', encoding="utf-8") as file:
+                    # NEW: Write model header at the top
+                    file.write(f"# Model: {model_slug}\n")
+                    file.write(f"# Title: {title}\n")
+                    file.write(f"# Date: {updated_date.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    file.write(f"\n{'='*60}\n\n")
+                    
+                    for message in messages:
+                        file.write(f"{message['author']}\n")
+                        file.write(f"{message['text']}\n\n")
+                
+                if directory_name not in pruned_data:
+                    pruned_data[directory_name] = []
+                
+                pruned_data[directory_name].append({
+                    "title": title,
+                    "create_time": conversation.get('inserted_at', updated_at),
+                    "update_time": updated_at,
+                    "model": model_slug,
+                    "messages": messages
+                })
+                
+                created_directories_info.append({
+                    "directory": directory_path,
+                    "file": file_name
+                })
+            else:
+                if idx < 5:
+                    self.log(f"Debug - Conversation '{title}' has no messages")
+        
+        self.log(f"Debug - Created {len(created_directories_info)} files with messages")
+        
         pruned_json_path = os.path.join(data_dir, "pruned.json")
         with open(pruned_json_path, 'w', encoding='utf-8') as json_file:
             json.dump(pruned_data, json_file, ensure_ascii=False, indent=4)
@@ -929,7 +1511,37 @@ Created by Eden with assistance from Atlas
                     all_files.append(os.path.join(root, file))
         
         # Sort files by date (extracted from filename)
-        all_files.sort(key=lambda x: os.path.basename(x).split('_')[-5:] if len(os.path.basename(x).split('_')) >= 5 else "")
+        # Fixed sorting function to handle edge cases
+        def get_sort_key(filepath):
+            filename = os.path.basename(filepath)
+            parts = filename.split('_')
+            
+            # Try to extract date components from the end of the filename
+            # Expected format: ..._DD_MM_YYYY_HH_MM_SS.txt
+            if len(parts) >= 6:
+                try:
+                    # Get the last 6 parts before .txt
+                    date_parts = parts[-6:]
+                    # Remove .txt from the last part
+                    date_parts[-1] = date_parts[-1].replace('.txt', '')
+                    
+                    # Convert to a sortable format: YYYY_MM_DD_HH_MM_SS
+                    year = date_parts[2]
+                    month = date_parts[1]
+                    day = date_parts[0]
+                    hour = date_parts[3]
+                    minute = date_parts[4]
+                    second = date_parts[5]
+                    
+                    return f"{year}_{month}_{day}_{hour}_{minute}_{second}"
+                except:
+                    # If parsing fails, return the filename as is
+                    return filename
+            else:
+                # If not enough parts, return the filename as is
+                return filename
+        
+        all_files.sort(key=get_sort_key)
         
         # Write file list to conversation_titles.txt
         with open(titles_file, 'a', encoding='utf-8') as f:
@@ -939,8 +1551,78 @@ Created by Eden with assistance from Atlas
                 f.write(f"{i}. {filename}\n")
         
         return titles_file
+
+    def cleanup_empty_untitled_files(self, data_dir):
+        """
+        Find and handle files that are named 'untitled' and have 0KB size
+        This method should be called after Claude conversation processing
+        """
+        empty_untitled_files = []
+        cleanup_dir = os.path.join(data_dir, "_empty_untitled_cleanup")
+        
+        # Scan through all subdirectories in data_dir
+        for root, dirs, files in os.walk(data_dir):
+            # Skip the cleanup directory itself
+            if "_empty_untitled_cleanup" in root:
+                continue
+                
+            for file in files:
+                if file.endswith('.txt'):
+                    file_path = os.path.join(root, file)
+                    
+                    # Check if file contains "untitled" (case insensitive) and is 0KB
+                    if 'untitled' in file.lower():
+                        file_size = os.path.getsize(file_path)
+                        if file_size == 0:
+                            empty_untitled_files.append(file_path)
+        
+        if empty_untitled_files:
+            self.log(f"\nFound {len(empty_untitled_files)} empty untitled files:")
+            
+            # Create cleanup directory
+            os.makedirs(cleanup_dir, exist_ok=True)
+            
+            # Create a log file for the cleanup
+            cleanup_log_path = os.path.join(cleanup_dir, f"cleanup_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            
+            with open(cleanup_log_path, 'w', encoding='utf-8') as log_file:
+                log_file.write(f"Empty Untitled Files Cleanup Log\n")
+                log_file.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                log_file.write(f"Found {len(empty_untitled_files)} empty untitled files\n\n")
+                
+                for file_path in empty_untitled_files:
+                    # Log the file
+                    self.log(f"  - {file_path}")
+                    log_file.write(f"{file_path}\n")
+                    
+                    # Move the file to cleanup directory
+                    relative_path = os.path.relpath(file_path, data_dir)
+                    new_path = os.path.join(cleanup_dir, relative_path)
+                    
+                    # Create subdirectories if needed
+                    os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                    
+                    # Move the file
+                    shutil.move(file_path, new_path)
+            
+            self.log(f"\nMoved empty untitled files to: {cleanup_dir}")
+            self.log(f"Cleanup log saved to: {cleanup_log_path}")
+            
+            # Return statistics
+            return {
+                'count': len(empty_untitled_files),
+                'cleanup_dir': cleanup_dir,
+                'log_file': cleanup_log_path
+            }
+        else:
+            self.log("\nNo empty untitled files found.")
+            return {
+                'count': 0,
+                'cleanup_dir': None,
+                'log_file': None
+            }
     
-    # Concept tracker implementation (from concept-tracker.py)
+    # Concept tracker implementation
     class ConceptTracker:
         """
         Analyzes conversation titles to track concepts and terminology over time
@@ -952,18 +1634,8 @@ Created by Eden with assistance from Atlas
             if core_concepts is None:
                 self.core_concepts = {
                     'AI': re.compile(r'\bAI\b|Artificial Intelligence|GPT|Claude|LLM', re.I),
-                    'ATLAS': re.compile(r'\bATLAS\b|A_T_L_A_S', re.I),
-                    'MACO': re.compile(r'\bMACO\b|MACAO|Multiple Ant Colony', re.I),
-                    'Server': re.compile(r'Server|RCON|Admin|Discord Bot', re.I),
-                    'Framework': re.compile(r'Framework|Structure|System', re.I),
-                    'Python': re.compile(r'Python|Script|Code|Programming', re.I),
-                    'Squad': re.compile(r'\bSquad\b|Server|Gaming', re.I),
-                    'Emergent': re.compile(r'Emergent|Resonance|Cognition', re.I),
-                    'Optimization': re.compile(r'Optimization|Optimizer|Performance', re.I),
-                    'Quantum': re.compile(r'Quantum|Q-', re.I),
-                    'GPU': re.compile(r'GPU|RTX|Graphics', re.I),
-                    'Mental Health': re.compile(r'Mental Health|Depression|Anxiety|Support', re.I),
-                    'Neurodiversity': re.compile(r'Neuro|ADHD|Autism', re.I),
+                    'Programming': re.compile(r'Python|JavaScript|Code|Programming', re.I),
+                    'Data': re.compile(r'Data|Database|CSV|JSON', re.I),
                 }
             else:
                 self.core_concepts = core_concepts
@@ -1027,7 +1699,7 @@ Created by Eden with assistance from Atlas
                             if count >= min_occurrences}
             
             # Remove common words and words already in core concepts
-            common_words = {'with', 'that', 'this', 'from', 'have', 'what', 'your', 'request', 'help'}
+            common_words = {'with', 'that', 'this', 'from', 'have', 'what', 'your', 'request', 'help', 'about', 'using'}
             for word in list(recurring_terms.keys()):
                 if word.lower() in common_words:
                     del recurring_terms[word]
@@ -1038,23 +1710,6 @@ Created by Eden with assistance from Atlas
             
             return recurring_terms
         
-        def identify_orphaned_conversations(self, conversations, concept_mentions):
-            """Identify conversations not matched by any concept"""
-            orphaned = []
-            matched_ids = set()
-            
-            # Collect all matched conversation IDs
-            for concept, mentions in concept_mentions.items():
-                for conv in mentions:
-                    matched_ids.add(conv['id'])
-            
-            # Find orphans
-            for conv in conversations:
-                if conv['id'] not in matched_ids:
-                    orphaned.append(conv)
-            
-            return orphaned
-
         def analyze_concept_evolution(self, concept_mentions, conversations):
             """Analyze how concepts evolved over time."""
             evolution = {}
@@ -1084,6 +1739,7 @@ Created by Eden with assistance from Atlas
                     'monthly_trend': monthly_counts,
                     'total_mentions': len(mentions)
                 }
+            
             return evolution
         
         def find_related_concepts(self, concept_mentions, threshold=0.3):
@@ -1124,40 +1780,6 @@ Created by Eden with assistance from Atlas
                 related[concept].sort(key=lambda x: x['similarity'], reverse=True)
             
             return related
-
-        def generate_orphan_analysis(self, orphaned_conversations, output_dir):
-            """Generate analysis of orphaned conversations"""
-            if not orphaned_conversations:
-                return
-            
-            orphan_path = os.path.join(output_dir, "Orphaned-Conversations.md")
-            
-            with open(orphan_path, 'w', encoding='utf-8') as f:
-                f.write("---\ntags:\n  - orphans\n  - analysis\n---\n\n")
-                f.write("# Orphaned Conversations Analysis\n\n")
-                f.write(f"Found {len(orphaned_conversations)} conversations not matched by any concept.\n\n")
-                
-                # Extract common terms from orphans to suggest new concepts
-                all_words = []
-                for conv in orphaned_conversations:
-                    words = re.findall(r'\b[A-Za-z][A-Za-z0-9]{2,}\b', conv['title'])
-                    all_words.extend([w for w in words if len(w) > 3])
-                
-                word_counts = Counter(all_words)
-                common_terms = {word: count for word, count in word_counts.items() 
-                               if count >= 2}  # Terms appearing at least twice
-                
-                if common_terms:
-                    f.write("## Suggested Additional Concepts\n\n")
-                    f.write("Based on orphaned conversation titles, consider adding these concepts:\n\n")
-                    
-                    for term, count in sorted(common_terms.items(), key=lambda x: x[1], reverse=True)[:20]:
-                        f.write(f"- `{term}` ({count} occurrences)\n")
-                
-                f.write("\n## Orphaned Conversations List\n\n")
-                for conv in orphaned_conversations:
-                    clean_filename = conv['clean_filename']
-                    f.write(f"- [[{clean_filename}]] - {conv['date']} - *{conv['title']}*\n")
 
         def generate_concept_notes(self, concept_mentions, evolution, related_concepts, output_dir):
             """Generate Obsidian notes for each concept."""
@@ -1344,15 +1966,19 @@ Created by Eden with assistance from Atlas
             additional_terms = self.extract_additional_terms(conversations)
             self.generate_term_analysis(additional_terms, output_dir)
             
-            # Identify and analyze orphaned conversations
-            orphaned_conversations = self.identify_orphaned_conversations(conversations, concept_mentions)
-            self.generate_orphan_analysis(orphaned_conversations, output_dir)
+            # Calculate orphaned conversations (conversations with no concept matches)
+            conversations_with_concepts = set()
+            for mentions in concept_mentions.values():
+                for conv in mentions:
+                    conversations_with_concepts.add(conv['id'])
+            
+            orphaned_count = len(conversations) - len(conversations_with_concepts)
             
             return {
                 'conversations': len(conversations),
+                'orphaned': orphaned_count,
                 'concepts': {concept: len(mentions) for concept, mentions in concept_mentions.items()},
-                'additional_terms': additional_terms,
-                'orphaned': len(orphaned_conversations)
+                'additional_terms': additional_terms
             }
 
 def main():
