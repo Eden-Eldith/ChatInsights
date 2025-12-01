@@ -1,14 +1,82 @@
 # ChatInsights
-## The Personal Knowledge Graph You Didn’t Know You Already Wrote
+## The Personal Knowledge Graph You Didn't Know You Already Wrote
 ![My Personal Vault](https://i.imgur.com/6J00Gu1.png)
-ChatInsights is a Python application designed to process your ChatGPT JSON export, analyze conversation concepts, and generate a structured Obsidian vault for knowledge management. It also extracts training data pairs for potential LLM fine-tuning.
+ChatInsights is a Python application designed to process your **ChatGPT, Claude, and Deepseek** JSON exports, analyze conversation concepts, and generate a structured Obsidian vault for knowledge management. It also extracts training data pairs for potential LLM fine-tuning.
 > ⚡️ Inspired by this Reddit post: [Mining Your AI Conversation History — r/ChatGPTPro](https://www.reddit.com/r/ChatGPTPro/comments/1jzzgie/mining_your_ai_conversation_history_the_complete/)
 >
 > While I originally built this tool to manage my own GPT conversations, this post aligned so perfectly with the vision that I decided to finalize and share it.
 
+---
+
+## 🆕 What's New
+
+### Version 3 (Current) - December 2025
+
+| Version | Platforms Supported | Key Features |
+|---------|---------------------|--------------|
+| v1 | ChatGPT only | Basic conversation export, concept tracking, training data |
+| v2 | ChatGPT + Claude | Multi-platform support, auto-detection, empty file cleanup |
+| **v3** | **ChatGPT + Claude + Deepseek** | **Model headers, thinking blocks, summaries, reasoning chains** |
+
+#### 🚀 Deepseek Platform Support
+- Full support for Deepseek conversation exports
+- Handles Deepseek's unique `fragments` message structure (REQUEST, RESPONSE, THINK)
+- Auto-detection distinguishes Deepseek from ChatGPT format
+- Deepseek radio button added to platform selection
+
+#### 🏷️ Model Identification Headers
+All exported `.md` and `.txt` files now include a header showing:
+```
+# Model: gpt-4o / deepseek-chat / Claude
+# Title: Conversation Title
+# Date: YYYY-MM-DD HH:MM:SS
+
+============================================================
+```
+
+**Platform Support:**
+- ✅ **ChatGPT**: Extracts `model_slug` from message metadata (e.g., `gpt-4o`, `gpt-5-instant`)
+- ✅ **Deepseek**: Extracts `model` field from messages (e.g., `deepseek-chat`, `deepseek-coder`)
+- ⚠️ **Claude**: Defaults to "Claude" (Anthropic does not include model version in exports)
+
+#### 🧠 Claude Thinking Block Extraction
+- Extracts Claude's internal reasoning/thinking blocks from conversations
+- Thinking blocks are marked with `(Thinking)` author suffix in output
+- Captures the `thinking` text from `content[*].type='thinking'` blocks
+- Works with Claude's extended thinking feature
+- Also captures `tool_use` blocks with `(Tool Use)` suffix
+
+#### 📝 Claude Conversation Summaries
+- Extracts AI-generated conversation summaries from Claude exports
+- Summaries appear in a dedicated section at the top of each conversation file:
+```markdown
+## Conversation Summary
+[Summary text here]
+
+============================================================
+```
+
+#### 🔗 Deepseek Reasoning Chain Support
+- Extracts `THINK` fragments as reasoning/thinking blocks with `(Thinking)` suffix
+- `REQUEST` fragments mapped to user messages
+- `RESPONSE` fragments mapped to assistant messages
+- Proper handling of Deepseek's `mapping` structure with `fragments` arrays
+
+### Version 2 Highlights
+
+- **Claude Support**: Process Anthropic Claude conversation exports
+- **Auto-Detection**: Automatic platform detection based on JSON structure
+- **Platform Selection**: Manual override for platform selection (auto/chatgpt/claude)
+- **Empty File Cleanup**: Automatically moves 0KB "untitled" files to cleanup folder
+- **Improved File Sorting**: Fixed sorting function for date extraction from filenames
+
+---
+
 ## Features
 
-*   **ChatGPT Export Processing:** Reads `conversations.json` and extracts conversation data.
+*   **Multi-Platform Export Processing:** Reads `conversations.json` from **ChatGPT, Claude, and Deepseek** and extracts conversation data with auto-detection.
+*   **Model Identification:** Outputs include model headers showing which AI model was used (e.g., `gpt-4o`, `deepseek-chat`, `Claude`).
+*   **Thinking Block Extraction:** Captures Claude's extended thinking and Deepseek's reasoning chains with `(Thinking)` suffix.
 *   **Text Log Generation:** Creates individual `.txt` files for each conversation, organized by month and year in a `data` subdirectory.
 *   **Obsidian Vault Creation:** Automatically generates an Obsidian-ready vault structure:
     *   **Concept Notes:** Creates `.md` files for key concepts identified in conversation titles (using customizable regex). Includes metadata, evolution trends, related concepts, and links to relevant conversations.
@@ -40,8 +108,9 @@ ChatInsights is a Python application designed to process your ChatGPT JSON expor
     ```bash
     python chat-insights-app.py
     ```
-2.  **Select Export File:** In the "Import & Process" tab, click "Browse" to select your `conversations.json` file downloaded from ChatGPT.
-3.  **Configure (Optional):**
+2.  **Select Export File:** In the "Import & Process" tab, click "Browse" to select your `conversations.json` file downloaded from ChatGPT, Claude, or Deepseek.
+3.  **Select Platform (Optional):** The app auto-detects the platform, but you can manually select ChatGPT, Claude, or Deepseek if needed.
+4.  **Configure (Optional):**
     *   Adjust the "Output Directory" if you don't want to use the default (`~/ChatInsights`).
     *   Change the "Your Name", "Assistant Name", and "System Name" to match your usage. These names are used when generating text logs and training data.
     *   Go to the "Concept Tracker" tab and customize the "Core Concepts to Track" list. Each line should be `ConceptName: regex_pattern`.
@@ -72,7 +141,7 @@ Each concept is matched using simple keywords. You don’t need to know regular 
 Paste this into the **Concept Tracker** tab to get started:
 
 ```
-AI: AI | Artificial Intelligence | GPT | Claude | LLM  
+AI: AI | Artificial Intelligence | GPT | Claude | LLM | Deepseek 
 Machine Learning: Machine Learning | ML | Training | Fine-Tuning  
 Coding: Python | Script | Code | Programming  
 Frameworks: Framework | Architecture | Structure | System  
@@ -106,8 +175,10 @@ Assuming the default output directory (`~/ChatInsights`):
 │   │   └── ...
 │   ├── May_2025/
 │   │   └── ...
+│   ├── _empty_untitled_cleanup/  # Empty untitled files moved here
+│   │   └── cleanup_log_*.txt
 │   ├── conversation_titles.txt # List used by concept tracker
-│   ├── pruned.json             # Structured conversation data
+│   ├── pruned.json             # Structured conversation data (includes model info)
 │   └── training_data.jsonl     # Default training data output
 ├── Obsidian/
 │   └── Concepts/             # Your Obsidian Vault Root
@@ -130,3 +201,40 @@ Assuming the default output directory (`~/ChatInsights`):
 
 - If you have alot of Notes, Then you may want to follow this [fix for the obsidian graph](https://www.reddit.com/r/ObsidianMD/comments/16hvjiy/fix_for_a_slow_obsidian_graph_view/)
 - To take this futher, Use the obsidian plugin [Ai Tagger Universe](https://github.com/niehu2018/obsidian-ai-tagger-universe) and I reccomend [Gemma3 on Ollama 1b version](https://ollama.com/library/gemma3) as the model for super fast tagging 
+
+---
+
+## Supported Platforms
+
+| Platform | Export Format | Detected By | Model Extraction |
+|----------|--------------|-------------|------------------|
+| ChatGPT | `conversations.json` | `mapping` with `message.author.role` (no `fragments`) | ✅ `model_slug` from metadata |
+| Claude | `conversations.json` | `chat_messages` with `sender` field | ⚠️ Defaults to "Claude" |
+| Deepseek | `conversations.json` | `mapping` with `message.fragments` array | ✅ `model` field from messages |
+
+---
+
+## Known Limitations
+
+### Claude Exports
+- **No Model Version**: Anthropic does not include which Claude model (Opus, Sonnet, Haiku, etc.) was used in their exports. The app defaults to showing "Claude" as the model name.
+- **Thinking Block Availability**: Thinking blocks only appear if the user had extended thinking enabled during the conversation.
+
+### ChatGPT Exports
+- Model slug depends on OpenAI including it in the export (generally reliable)
+
+### Deepseek Exports
+- Model field depends on Deepseek including it in the export (generally reliable)
+- Requires `fragments` array in message structure
+
+### General
+- Very large exports (500MB+) may be slow to process
+- Memory usage scales with export size
+
+---
+
+## Credits
+
+- **Original Application (v1)**: Eden_Eldith (P.C O'Brien) & The Claude 3 Models
+- **v2 & v3 Enhancements**: GitHub Copilot (Claude Opus 4.5)
+- **December 2025** 
