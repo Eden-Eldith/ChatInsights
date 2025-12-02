@@ -233,6 +233,20 @@ Assuming the default output directory (`~/ChatInsights`):
 
 ---
 
+## License
+
+**License Change: 2nd December 2025**
+
+As of 2nd December 2025, ChatInsights is licensed under the **GNU General Public License v3.0**.
+
+If you downloaded ChatInsights (v1 or v2) prior to this date, those copies remain covered under the MIT License that was included at the time. All I ask is that you follow the MIT agreement and credit me.
+
+All downloads from 2nd December 2025 onwards, including all versions in this repository, are licensed under GPLv3. This means any derivative works must also be open source under GPLv3.
+
+See the [LICENSE](LICENSE) file for full terms.
+
+---
+
 ## Credits
 
 - **Original Application (v1)**: Eden_Eldith (P.C O'Brien) & The Claude 3 Models

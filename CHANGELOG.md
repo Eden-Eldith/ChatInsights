@@ -10,6 +10,45 @@
 
 ---
 
+## License Change - 2nd December 2025
+
+### 📜 License Updated: MIT → GNU GPLv3
+
+As of 2nd December 2025, ChatInsights is now licensed under the **GNU General Public License v3.0**.
+
+#### What This Means
+- **Prior Downloads (v1, v2 before this date)**: If you downloaded ChatInsights before 2nd December 2025, those copies remain covered under the MIT License that was included at the time.
+- **New Downloads (from 2nd December 2025)**: All versions in this repository are now licensed under GPLv3. Any derivative works must also be open source under GPLv3.
+
+#### Changes Made
+- ✅ Added GPL license header to all Python files (`chat-insights-app.py` and all files in `Versions/` folder)
+- ✅ Updated `LICENSE` file with full GPLv3 text
+- ✅ Updated `README.md` with License section explaining the change
+- ✅ Updated this `CHANGELOG.md` to document the license transition
+
+#### License Header Added to All .py Files
+```python
+"""
+ChatInsights - AI Chat Export Analysis Tool
+Copyright (C) 2025 Eden_Eldith (P.C. O'Brien) c:
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+"""
+```
+
+---
+
 ## v3 (Current) - December 2025
 
 ### New Features
